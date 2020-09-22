@@ -10,5 +10,7 @@ namespace APIServer.Identity
     public class AppUser : IdentityUser
     {
         public int EmployeeId { get; set; }
+        public string JwtToken { get; set; }
+        public string RefreshToken { get; set; }
     }
 }

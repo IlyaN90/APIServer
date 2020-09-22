@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using APIServer.Authorization;
 using APIServer.Identity;
 using APIServer.Models;
+using APIServer.Supporting;
+using AutoMapper;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -34,28 +36,34 @@ namespace APIServer
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
+            //context for AppUser
             services.AddDbContext<AppuserDBContext>(options =>
                options.UseSqlServer(
-                   Configuration.GetConnectionString("NorthwindContextConnection")));
-
+                   Configuration.GetConnectionString("AppUserDBContextConnection")));
+            //context for Nowrthwind
             services.AddDbContext<NorthwindContext>(options =>
                options.UseSqlServer(
-                   Configuration.GetConnectionString("AppUserDBContextConnection")));
-
+                   Configuration.GetConnectionString("NorthwindContextConnection")));
+            
             services.AddControllers();
-
+            //redirection to HTTPS
             services.AddHttpsRedirection(options =>
             {
                 options.HttpsPort = 5001;
                 options.RedirectStatusCode = StatusCodes.Status307TemporaryRedirect;
             });
 
-            services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            services.AddAuthentication(options => 
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+            }) 
                 .AddJwtBearer(options =>
                 {
                     options.RequireHttpsMetadata = false;
                     options.SaveToken = true;
-               /*     options.TokenValidationParameters = new TokenValidationParameters
+                    options.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateIssuer = true,
                         ValidateAudience = true,
@@ -65,8 +73,14 @@ namespace APIServer
                         ValidAudience = Configuration["Jwt: Audience"],
                         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["Jwt: SecretKey"])),
                         ClockSkew = TimeSpan.Zero
-                    };*/
+                    };
                 });
+
+            services.AddIdentity<AppUser, IdentityRole>()
+                .AddRoleManager<RoleManager<IdentityRole>>()  
+                   .AddEntityFrameworkStores<AppuserDBContext>()
+                       .AddDefaultTokenProviders();
+
             services.AddAuthorization(config =>
             {
                 config.AddPolicy(Policies.Admin, Policies.AdminPolicy());
@@ -74,9 +88,9 @@ namespace APIServer
                 config.AddPolicy(Policies.Employee, Policies.EmployeePolicy());
             });
 
+            // Default Password settings.
             services.Configure<IdentityOptions>(options =>
             {
-                // Default Password settings.
                 options.Password.RequireDigit = true;
                 options.Password.RequireLowercase = true;
                 options.Password.RequireNonAlphanumeric = true;
@@ -84,6 +98,14 @@ namespace APIServer
                 options.Password.RequiredLength = 6;
                 options.Password.RequiredUniqueChars = 1;
             });
+            //mapper
+            var mapperConfig = new MapperConfiguration(mc =>
+            {
+                mc.AddProfile(new AutoMapperProfile());
+            });
+
+            IMapper mapper = mapperConfig.CreateMapper();
+            services.AddSingleton(mapper);
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -100,6 +122,7 @@ namespace APIServer
 
             app.UseAuthentication();
             app.UseAuthorization();
+
 
             app.UseEndpoints(endpoints =>
             {
