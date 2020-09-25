@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+﻿using APIServer.Migrations;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -18,9 +19,19 @@ namespace APIServer.Identity
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
-            // Customize the ASP.NET Identity model and override the defaults if needed.
-            // For example, you can rename the ASP.NET Identity table names and more.
-            // Add your customizations after calling base.OnModelCreating(builder);
-        }
+            /*builder.Entity<AppUser>()
+                .HasIndex(u => u.Id)
+                .IsUnique();*/
+
+            builder.Entity<AppUser>()
+                .HasOne(a => a.JToken)
+                .WithOne(b => b.appUser)
+                .HasPrincipalKey<AppUser>(c => c.Id);
+            ;
+            builder.Entity<AppUser>()
+                .HasOne(a => a.RefreshToken)
+                .WithOne(b => b.appUser)
+                .HasPrincipalKey<AppUser>(c => c.Id);
+         }
     }
 }

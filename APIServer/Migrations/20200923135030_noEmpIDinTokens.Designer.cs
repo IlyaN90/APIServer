@@ -4,14 +4,16 @@ using APIServer.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace APIServer.Migrations
 {
     [DbContext(typeof(AppuserDBContext))]
-    partial class AppuserDBContextModelSnapshot : ModelSnapshot
+    [Migration("20200923135030_noEmpIDinTokens")]
+    partial class noEmpIDinTokens
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -76,6 +78,9 @@ namespace APIServer.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EmployeeId")
+                        .IsUnique();
+
                     b.HasIndex("NormalizedEmail")
                         .HasName("EmailIndex");
 
@@ -100,14 +105,7 @@ namespace APIServer.Migrations
                     b.Property<string>("Token")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("appUserId")
-                        .HasColumnType("nvarchar(450)");
-
                     b.HasKey("Id");
-
-                    b.HasIndex("appUserId")
-                        .IsUnique()
-                        .HasFilter("[appUserId] IS NOT NULL");
 
                     b.ToTable("JwtTokens");
                 });
@@ -125,14 +123,7 @@ namespace APIServer.Migrations
                     b.Property<string>("Token")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("appUserId")
-                        .HasColumnType("nvarchar(450)");
-
                     b.HasKey("Id");
-
-                    b.HasIndex("appUserId")
-                        .IsUnique()
-                        .HasFilter("[appUserId] IS NOT NULL");
 
                     b.ToTable("RefreshTokens");
                 });
@@ -268,18 +259,19 @@ namespace APIServer.Migrations
                     b.ToTable("AspNetUserTokens");
                 });
 
-            modelBuilder.Entity("APIServer.Identity.JwtTokens", b =>
+            modelBuilder.Entity("APIServer.Identity.AppUser", b =>
                 {
-                    b.HasOne("APIServer.Identity.AppUser", "appUser")
-                        .WithOne("JToken")
-                        .HasForeignKey("APIServer.Identity.JwtTokens", "appUserId");
-                });
+                    b.HasOne("APIServer.Identity.JwtTokens", "JToken")
+                        .WithOne("appUser")
+                        .HasForeignKey("APIServer.Identity.AppUser", "EmployeeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
-            modelBuilder.Entity("APIServer.Identity.RefreshTokens", b =>
-                {
-                    b.HasOne("APIServer.Identity.AppUser", "appUser")
-                        .WithOne("RefreshToken")
-                        .HasForeignKey("APIServer.Identity.RefreshTokens", "appUserId");
+                    b.HasOne("APIServer.Identity.RefreshTokens", "RefreshToken")
+                        .WithOne("appUser")
+                        .HasForeignKey("APIServer.Identity.AppUser", "EmployeeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

@@ -4,14 +4,16 @@ using APIServer.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace APIServer.Migrations
 {
     [DbContext(typeof(AppuserDBContext))]
-    partial class AppuserDBContextModelSnapshot : ModelSnapshot
+    [Migration("20200923135820_fkID")]
+    partial class fkID
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

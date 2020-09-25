@@ -4,14 +4,16 @@ using APIServer.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace APIServer.Migrations
 {
     [DbContext(typeof(AppuserDBContext))]
-    partial class AppuserDBContextModelSnapshot : ModelSnapshot
+    [Migration("20200922104447_jwtTokenClass")]
+    partial class jwtTokenClass
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -41,6 +43,12 @@ namespace APIServer.Migrations
                     b.Property<int>("EmployeeId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("JTokenId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("JwtToken")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("bit");
 
@@ -64,6 +72,9 @@ namespace APIServer.Migrations
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("bit");
 
+                    b.Property<string>("RefreshToken")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("nvarchar(max)");
 
@@ -75,6 +86,8 @@ namespace APIServer.Migrations
                         .HasMaxLength(256);
 
                     b.HasKey("Id");
+
+                    b.HasIndex("JTokenId");
 
                     b.HasIndex("NormalizedEmail")
                         .HasName("EmailIndex");
@@ -94,47 +107,18 @@ namespace APIServer.Migrations
                         .HasColumnType("int")
                         .HasAnnotation("SqlServer:ValueGenerationStrategy", SqlServerValueGenerationStrategy.IdentityColumn);
 
+                    b.Property<int>("EmployeeId")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("ExpirationDate")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Token")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("appUserId")
-                        .HasColumnType("nvarchar(450)");
-
                     b.HasKey("Id");
-
-                    b.HasIndex("appUserId")
-                        .IsUnique()
-                        .HasFilter("[appUserId] IS NOT NULL");
 
                     b.ToTable("JwtTokens");
-                });
-
-            modelBuilder.Entity("APIServer.Identity.RefreshTokens", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasAnnotation("SqlServer:ValueGenerationStrategy", SqlServerValueGenerationStrategy.IdentityColumn);
-
-                    b.Property<DateTime>("Expires")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Token")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("appUserId")
-                        .HasColumnType("nvarchar(450)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("appUserId")
-                        .IsUnique()
-                        .HasFilter("[appUserId] IS NOT NULL");
-
-                    b.ToTable("RefreshTokens");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -268,18 +252,11 @@ namespace APIServer.Migrations
                     b.ToTable("AspNetUserTokens");
                 });
 
-            modelBuilder.Entity("APIServer.Identity.JwtTokens", b =>
+            modelBuilder.Entity("APIServer.Identity.AppUser", b =>
                 {
-                    b.HasOne("APIServer.Identity.AppUser", "appUser")
-                        .WithOne("JToken")
-                        .HasForeignKey("APIServer.Identity.JwtTokens", "appUserId");
-                });
-
-            modelBuilder.Entity("APIServer.Identity.RefreshTokens", b =>
-                {
-                    b.HasOne("APIServer.Identity.AppUser", "appUser")
-                        .WithOne("RefreshToken")
-                        .HasForeignKey("APIServer.Identity.RefreshTokens", "appUserId");
+                    b.HasOne("APIServer.Identity.JwtTokens", "JToken")
+                        .WithMany()
+                        .HasForeignKey("JTokenId");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

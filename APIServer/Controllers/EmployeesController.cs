@@ -18,30 +18,22 @@ using APIServer.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using System.Net.Http;
 using Newtonsoft.Json;
-using APIServer.Migrations;
 using APIServer.Services;
+using APIServer.Migrations.Northwind;
 
 namespace APIServer.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    //[Authorize]
+    //[Authorize(Roles ="VD,Employee")]
     public class EmployeesController : ControllerBase
     {
-        private readonly NorthwindContext _nwContext;
-        private readonly UserManager<AppUser> _userManager;
-        private readonly RoleManager<IdentityRole> _roleManager;
-        private readonly IConfiguration _configuration;
+        //private readonly NorthwindContext _nwContext;
         private readonly IAccountService _accountService;
 
-        public EmployeesController(NorthwindContext nwContext,UserManager<AppUser> userManager,
-            RoleManager<IdentityRole> roleManager, IAccountService account,
-            IMapper mapper,
-            IConfiguration configuration)
+        public EmployeesController(IAccountService account)
         {
-            _nwContext = nwContext;
-            _userManager = userManager;
-            _roleManager = roleManager;
-            _configuration = configuration;
             _accountService = account;
         }
 
@@ -49,9 +41,10 @@ namespace APIServer.Controllers
         //        [Authorize(Roles=UserRoles.Admin)]
 
         //register an employee
+        [AllowAnonymous]
         [HttpPost]
         [Route("register")]
-        public async Task<IActionResult> Register([FromForm] RegisterModel model)
+        public async Task<IActionResult> Register(RegisterModel model)
         {
             var userExists = await _accountService.FindByNameAsync(model.UserName);
             if (userExists != null)
@@ -69,15 +62,18 @@ namespace APIServer.Controllers
                 return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User creation failed! Please check user details and try again." });
             }
 
-            _accountService.AddUserToRoleEmployee(user);
+            await _accountService.AddUserToRoleEmployee(user);
 
-            return Ok(new Response { Status = "Success", Message = "User created successfully!" });
+            return Ok(new Response { 
+                Status = "Success", 
+                Message = "User created successfully!",
+            });
         }
 
         //register an Admin and create all Roles
         [HttpPost]
         [Route("register-admin")]
-        public async Task<IActionResult> RegisterAdmin([FromForm] RegisterModel model)
+        public async Task<IActionResult> RegisterAdmin(RegisterModel model)
         {
             var userExists = await _accountService.FindByNameAsync(model.UserName);
             if (userExists != null)
@@ -95,16 +91,16 @@ namespace APIServer.Controllers
             if (!result.Succeeded)
                 return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User creation failed! Please check user details and try again." });
 
-            _accountService.AddUserToRoleAdmin(user);
+            var res=await _accountService.AddUserToRoleAdmin(user);
 
             return Ok(new Response { Status = "Success", Message = "User created successfully!" });
         }
 
         [HttpPost]
         [Route("register-vd")]
-        public async Task<IActionResult> RegisterVD([FromForm] RegisterModel model)
+        public async Task<IActionResult> RegisterVD(RegisterModel model)
         {
-            var userExists = await _userManager.FindByNameAsync(model.UserName);
+            var userExists = await _accountService.FindByNameAsync(model.UserName);
             if (userExists != null)
                 return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User already exists!" });
 
@@ -121,22 +117,43 @@ namespace APIServer.Controllers
                 return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User creation failed! Please check user details and try again." });
             }
 
-            _accountService.AddUserToRoleVD(user);
+            await _accountService.AddUserToRoleVD(user);
 
             return Ok(new Response { Status = "Success", Message = "User created successfully!" });
         }
 
         [Authorize(Roles=UserRoles.VD)]
         [HttpPost]
-        public async Task<IActionResult> Authorize([FromForm] RegisterModel model)
+        public async Task<IActionResult> Authorize(RefreshTokenRequest refreshToken)
         {
             return null;
         }
-        //takes in login and password and generates bearer and refresh tokens
+
+  //      [Authorize(Roles = UserRoles.VD)]
+      //  [Authorize]
+        [HttpPost("refresh-token")]
+        public async Task<ActionResult<AuthenticateResponse>> RefreshToken (RefreshTokenRequest refreshToken)
+        {
+            var response = await _accountService.RefreshToken(refreshToken);
+            if (response.UserName == null)
+            {
+                return Unauthorized();
+            }
+            return Ok(new
+            {
+                JwtToken = new JwtSecurityTokenHandler().WriteToken(response.JwtToken),
+                UserName = response.UserName,
+                RefreshToken = response.RefreshToken,
+                JwtExpiresAt = response.JwtToken.ValidTo,
+                RefExpiresAt = response.RefExpires
+            });
+        }
+
+        //takes in login and password and generates new bearer and refresh tokens
         [AllowAnonymous]
         [HttpPost]
         [Route("Login")]
-        public async Task<IActionResult> Login([FromForm] RegisterModel model)
+        public async Task<IActionResult> Login(LoginModel model)
         {
             AppUser user = await _accountService.FindByNameAsync(model.UserName);
 
@@ -144,22 +161,28 @@ namespace APIServer.Controllers
             {
                 if (user != null)
                 {
-                    var token = await _accountService.CreateTokens(user);
-                    user.JwtToken = token.ToString();
+                    SecurityToken token = await _accountService.CreateJWTToken(user);
+                    JwtTokens newToken = await _accountService.GetJWTToken(user);
+                    RefreshTokens usersRefresh = await _accountService.GetRefreshToken(user);
 
-                    if (user.RefreshToken != null)
-                    {
-                        //https://code-maze.com/using-refresh-tokens-in-asp-net-core-authentication/#:~:text=With%20refresh%20token%2Dbased%20flow,identify%20the%20app%20using%20it.
-                        //user.RefreshToken = refreshToken.ToString();
-                    }
+                    user.JToken = newToken;
+                    user.JToken.Token = token.ToString();
+                    user.JToken.ExpirationDate = token.ValidTo;
 
-                    // var res = await _userManager.UpdateAsync(user);
+                    RefreshTokens refreshToken = new RefreshTokens();
+                    user.RefreshToken = refreshToken;
+                    refreshToken = _accountService.CreateRefToken(user);
+                    user.RefreshToken.Token = refreshToken.Token;
+                    user.RefreshToken.Expires = refreshToken.Expires;
+                    var res = await _accountService.UpdateUserTokens(user);
 
                     return Ok(new
                     {
-                        token = new JwtSecurityTokenHandler().WriteToken(token),
-                        refToken = new JwtSecurityTokenHandler().WriteToken(token),
-                        expiration = token.ValidTo
+                        JwtToken = new JwtSecurityTokenHandler().WriteToken(token),
+                        UserName=user.UserName,
+                        RefreshToken = refreshToken.Token,
+                        JwtExpiresAt = token.ValidTo,
+                        RefExpiresAt = refreshToken.Expires
                     });
                 }
             }
@@ -176,29 +199,24 @@ namespace APIServer.Controllers
             //var stringClaimValue = securityToken.Claims.ToList();
             return stringClaimValue;
         }
-       
 
         // GET: api/Employees
+        [Authorize(Roles ="VD, Admin")]
         [HttpGet]
         public async Task<ActionResult<IEnumerable<AppUser>>> GetEmployees()
         {
-            return await _userManager.Users.ToListAsync();
+            return await _accountService.GetEmployees();
         }
 
         // GET: api/Employees/5
         [HttpGet("{id}")]
         public async Task<ActionResult<CustomUser>> GetEmployees(int id)
         {
-            Employees employee = await _nwContext.Employees.FindAsync(id);
-            var appUser =  _userManager.Users.Where(u => u.EmployeeId == id).FirstOrDefault();
-            if (employee == null || appUser == null)
+            CustomUser customUser = await _accountService.FindUserById(id);
+            if (customUser == null)
             {
                 return NotFound();
             }
-            CustomUser customUser = new CustomUser();
-            customUser.EmployeeId = appUser.EmployeeId;
-            customUser.Username = appUser.UserName;
-
             return customUser;
         }
 
@@ -206,7 +224,7 @@ namespace APIServer.Controllers
         // To protect from overposting attacks, enable the specific properties you want to bind to, for
         // more details, see https://go.microsoft.com/fwlink/?linkid=2123754.
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutEmployees(int id, Employees employees)
+       /* public async Task<IActionResult> PutEmployees(int id, Employees employees)
         {
             if (id != employees.EmployeeId)
             {
@@ -221,7 +239,7 @@ namespace APIServer.Controllers
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!EmployeesExists(id))
+                if (!_nwContext.Employees.Any(e => e.EmployeeId == id))
                 {
                     return NotFound();
                 }
@@ -229,9 +247,11 @@ namespace APIServer.Controllers
                 {
                     throw;
                 }
-            }
+            }*/
 
             return NoContent();
+            throw new NotImplementedException();
+
         }
 
         // POST: api/Employees
@@ -240,10 +260,12 @@ namespace APIServer.Controllers
         [HttpPost]
         public async Task<ActionResult<Employees>> PostEmployees(Employees employees)
         {
-            _nwContext.Employees.Add(employees);
+            /*_nwContext.Employees.Add(employees);
             await _nwContext.SaveChangesAsync();
 
-            return CreatedAtAction("GetEmployees", new { id = employees.EmployeeId }, employees);
+            return CreatedAtAction("GetEmployees", new { id = employees.EmployeeId }, employees);*/
+            throw new NotImplementedException();
+
         }
 
         // DELETE: api/Employees/5
@@ -251,23 +273,12 @@ namespace APIServer.Controllers
         [HttpDelete("{id}")]
         public async Task<ActionResult<Employees>> DeleteEmployees(int id)
         {
-            AppUser deleteMe = _userManager.Users.Where(u=>u.EmployeeId==id).First();
-            var result = await _userManager.DeleteAsync(deleteMe);
-            var employees = await _nwContext.Employees.FindAsync(id);
+            Employees employees = await _accountService.DeleteEmployees(id);
             if (employees == null)
             {
-                return NotFound();
+                NotFound();
             }
-
-            _nwContext.Employees.Remove(employees);
-            await _nwContext.SaveChangesAsync();
-
             return employees;
-        }
-
-        private bool EmployeesExists(int id)
-        {
-            return _nwContext.Employees.Any(e => e.EmployeeId == id);
         }
     }
 }

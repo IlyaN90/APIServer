@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using APIServer.Authorization;
 using APIServer.Identity;
 using APIServer.Models;
+using APIServer.Services;
 using APIServer.Supporting;
 using AutoMapper;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -36,6 +37,7 @@ namespace APIServer
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
+
             //context for AppUser
             services.AddDbContext<AppuserDBContext>(options =>
                options.UseSqlServer(
@@ -44,7 +46,9 @@ namespace APIServer
             services.AddDbContext<NorthwindContext>(options =>
                options.UseSqlServer(
                    Configuration.GetConnectionString("NorthwindContextConnection")));
-            
+
+            services.AddScoped<IAccountService, AccountService>();
+
             services.AddControllers();
             //redirection to HTTPS
             services.AddHttpsRedirection(options =>
@@ -52,6 +56,11 @@ namespace APIServer
                 options.HttpsPort = 5001;
                 options.RedirectStatusCode = StatusCodes.Status307TemporaryRedirect;
             });
+
+            services.AddIdentity<AppUser, IdentityRole>()
+                .AddRoleManager<RoleManager<IdentityRole>>()
+                   .AddEntityFrameworkStores<AppuserDBContext>()
+                       .AddDefaultTokenProviders();
 
             services.AddAuthentication(options => 
             {
@@ -66,20 +75,17 @@ namespace APIServer
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateIssuer = true,
-                        ValidateAudience = true,
+                        ValidateAudience = false,
                         ValidateLifetime = true,
                         ValidateIssuerSigningKey = true,
-                        ValidIssuer = Configuration["Jwt: Issuer"],
-                        ValidAudience = Configuration["Jwt: Audience"],
-                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["Jwt: SecretKey"])),
+                        ValidIssuer = Configuration["Jwt:Issuer"],
+                        ValidAudience = Configuration["Jwt:Audience"],
+                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["Jwt:SecretKey"])),
                         ClockSkew = TimeSpan.Zero
                     };
                 });
 
-            services.AddIdentity<AppUser, IdentityRole>()
-                .AddRoleManager<RoleManager<IdentityRole>>()  
-                   .AddEntityFrameworkStores<AppuserDBContext>()
-                       .AddDefaultTokenProviders();
+
 
             services.AddAuthorization(config =>
             {
