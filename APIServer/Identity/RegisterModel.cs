@@ -25,5 +25,7 @@ namespace APIServer.Identity
         public string LastName { get; set; }
 
         public int EmployeeID { get; set; }
+
+        public string Country { get; set; }
     }
 }

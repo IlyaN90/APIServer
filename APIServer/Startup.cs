@@ -48,6 +48,7 @@ namespace APIServer
                    Configuration.GetConnectionString("NorthwindContextConnection")));
 
             services.AddScoped<IAccountService, AccountService>();
+            services.AddScoped<IOrderService, OrderService>();
 
             services.AddControllers();
             //redirection to HTTPS

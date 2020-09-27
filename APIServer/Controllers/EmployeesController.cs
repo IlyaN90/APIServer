@@ -1,46 +1,31 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using APIServer.Models;
 using APIServer.Identity;
-using Microsoft.AspNetCore.Identity;
-using AutoMapper;
 using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
 using Microsoft.IdentityModel.Tokens;
-using System.Text;
-using Microsoft.Extensions.Configuration;
 using APIServer.Authorization;
 using Microsoft.AspNetCore.Authorization;
-using System.Net.Http;
-using Newtonsoft.Json;
 using APIServer.Services;
-using APIServer.Migrations.Northwind;
 
 namespace APIServer.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    //[Authorize]
-    //[Authorize(Roles ="VD,Employee")]
     public class EmployeesController : ControllerBase
     {
-        //private readonly NorthwindContext _nwContext;
         private readonly IAccountService _accountService;
 
         public EmployeesController(IAccountService account)
         {
             _accountService = account;
         }
-
-        //        [Authorize]
-        //        [Authorize(Roles=UserRoles.Admin)]
-
-        //register an employee
+       
+        #region register appUsers
         [AllowAnonymous]
         [HttpPost]
         [Route("register")]
@@ -53,7 +38,8 @@ namespace APIServer.Controllers
             }
             //create an employee and get its EmployeeID
             _accountService.AddNewNWEmployee(model);
-            model.EmployeeID = _accountService.FindEmployeeId(model.FirstName, model.LastName);
+            Employees employee= await _accountService.FindEmployeeId(model.FirstName, model.LastName);
+            model.EmployeeID = employee.EmployeeId;
             AppUser user = _accountService.AddIdeUser(model);
 
             var result = await _accountService.CreateAsync(user, model.Password);
@@ -64,13 +50,46 @@ namespace APIServer.Controllers
 
             await _accountService.AddUserToRoleEmployee(user);
 
-            return Ok(new Response { 
-                Status = "Success", 
+            return Ok(new
+            {
+                Status = "Success",
                 Message = "User created successfully!",
-            });
+                employeeId = user.EmployeeId
+            }); 
         }
 
-        //register an Admin and create all Roles
+        [AllowAnonymous]
+        [HttpPost]
+        [Route("register-manager")]
+        public async Task<IActionResult> RegisterCountryManager(RegisterModel model)
+        {
+            var userExists = await _accountService.FindByNameAsync(model.UserName);
+            if (userExists != null)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User already exists!" });
+            }
+            //create an employee and get its EmployeeID
+            _accountService.AddNewNWEmployee(model);
+            Employees employee= await _accountService.FindEmployeeId(model.FirstName, model.LastName);
+            model.EmployeeID = employee.EmployeeId;
+            AppUser user = _accountService.AddIdeUser(model);
+
+            var result = await _accountService.CreateAsync(user, model.Password);
+            if (!result.Succeeded)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User creation failed! Please check user details and try again." });
+            }
+
+            await _accountService.AddUserToRoleCountryManager(user);
+
+            return Ok(new
+            {
+                Status = "Success",
+                Message = "User created successfully!",
+                employeeId = user.EmployeeId
+            });
+        }
+        
         [HttpPost]
         [Route("register-admin")]
         public async Task<IActionResult> RegisterAdmin(RegisterModel model)
@@ -81,7 +100,8 @@ namespace APIServer.Controllers
                 return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User already exists!" });
             }
             _accountService.AddNewNWEmployee(model);
-            int id = _accountService.FindEmployeeId(model.FirstName, model.LastName);
+            Employees employee = await _accountService.FindEmployeeId(model.FirstName, model.LastName);
+            int id = employee.EmployeeId;
             model.EmployeeID = id;
 
             //create an employee and get its EmployeeID
@@ -93,7 +113,12 @@ namespace APIServer.Controllers
 
             var res=await _accountService.AddUserToRoleAdmin(user);
 
-            return Ok(new Response { Status = "Success", Message = "User created successfully!" });
+            return Ok(new
+            {
+                Status = "Success",
+                Message = "User created successfully!",
+                employeeId = user.EmployeeId
+            });
         }
 
         [HttpPost]
@@ -106,7 +131,8 @@ namespace APIServer.Controllers
 
             //create an employee and get its EmployeeID
             _accountService.AddNewNWEmployee(model);
-            int id = _accountService.FindEmployeeId(model.FirstName, model.LastName);
+            Employees employee = await _accountService.FindEmployeeId(model.FirstName, model.LastName);
+            int id = employee.EmployeeId;
             model.EmployeeID = id;
 
             AppUser user = _accountService.AddIdeUser(model);
@@ -119,18 +145,15 @@ namespace APIServer.Controllers
 
             await _accountService.AddUserToRoleVD(user);
 
-            return Ok(new Response { Status = "Success", Message = "User created successfully!" });
+            return Ok(new
+            {
+                Status = "Success",
+                Message = "User created successfully!",
+                employeeId = user.EmployeeId
+            });
         }
-
-        [Authorize(Roles=UserRoles.VD)]
-        [HttpPost]
-        public async Task<IActionResult> Authorize(RefreshTokenRequest refreshToken)
-        {
-            return null;
-        }
-
-  //      [Authorize(Roles = UserRoles.VD)]
-      //  [Authorize]
+        #endregion
+        
         [HttpPost("refresh-token")]
         public async Task<ActionResult<AuthenticateResponse>> RefreshToken (RefreshTokenRequest refreshToken)
         {
@@ -148,8 +171,7 @@ namespace APIServer.Controllers
                 RefExpiresAt = response.RefExpires
             });
         }
-
-        //takes in login and password and generates new bearer and refresh tokens
+        
         [AllowAnonymous]
         [HttpPost]
         [Route("Login")]
@@ -179,28 +201,51 @@ namespace APIServer.Controllers
                     return Ok(new
                     {
                         JwtToken = new JwtSecurityTokenHandler().WriteToken(token),
-                        UserName=user.UserName,
+                        UserName = user.UserName,
+                        EmployeeId = user.EmployeeId,
                         RefreshToken = refreshToken.Token,
                         JwtExpiresAt = token.ValidTo,
                         RefExpiresAt = refreshToken.Expires
-                    });
+                    }); 
                 }
             }
             return Unauthorized();
         }
-        //check claims
-        public string GetClaim(string token, string claimType)
-        {
-            //Request.HttpContext.User.Claims
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var securityToken = tokenHandler.ReadToken(token) as JwtSecurityToken;
 
-             var stringClaimValue = securityToken.Claims.First(claim => claim.Type == claimType).Value;
-            //var stringClaimValue = securityToken.Claims.ToList();
-            return stringClaimValue;
+
+        [Authorize]
+        [HttpGet("{id:int}")]
+        public async Task<ActionResult<CustomUser>> GetEmployee(int id)
+        {
+            var claim = ((ClaimsIdentity)User.Identity).Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name);
+            AppUser employee = await _accountService.FindByNameAsync(claim.Value);
+            int employeeId = employee.EmployeeId;
+            CustomUser customUser = await _accountService.FindUserById(id);
+            if (customUser == null)
+            {
+                return NotFound();
+            }
+            List<Claim> claims = ((ClaimsIdentity)User.Identity).Claims.Where(c => c.Type == ClaimTypes.Role).ToList();
+            bool admin = false;
+            bool vd = false;
+            foreach (Claim c in claims)
+            {
+                if (c.Value == "Admin")
+                {
+                    admin = true;
+                }
+                if (c.Value == "VD")
+                {
+                    vd = true;
+                }
+            }
+            if (employeeId == id || admin == true || vd == true)
+            {
+                return customUser;
+            }
+            return Unauthorized();
         }
 
-        // GET: api/Employees
         [Authorize(Roles ="VD, Admin")]
         [HttpGet]
         public async Task<ActionResult<IEnumerable<AppUser>>> GetEmployees()
@@ -208,70 +253,9 @@ namespace APIServer.Controllers
             return await _accountService.GetEmployees();
         }
 
-        // GET: api/Employees/5
-        [HttpGet("{id}")]
-        public async Task<ActionResult<CustomUser>> GetEmployees(int id)
-        {
-            CustomUser customUser = await _accountService.FindUserById(id);
-            if (customUser == null)
-            {
-                return NotFound();
-            }
-            return customUser;
-        }
-
-        // PUT: api/Employees/5
-        // To protect from overposting attacks, enable the specific properties you want to bind to, for
-        // more details, see https://go.microsoft.com/fwlink/?linkid=2123754.
-        [HttpPut("{id}")]
-       /* public async Task<IActionResult> PutEmployees(int id, Employees employees)
-        {
-            if (id != employees.EmployeeId)
-            {
-                return BadRequest();
-            }
-
-            _nwContext.Entry(employees).State = EntityState.Modified;
-
-            try
-            {
-                await _nwContext.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!_nwContext.Employees.Any(e => e.EmployeeId == id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }*/
-
-            return NoContent();
-            throw new NotImplementedException();
-
-        }
-
-        // POST: api/Employees
-        // To protect from overposting attacks, enable the specific properties you want to bind to, for
-        // more details, see https://go.microsoft.com/fwlink/?linkid=2123754.
-        [HttpPost]
-        public async Task<ActionResult<Employees>> PostEmployees(Employees employees)
-        {
-            /*_nwContext.Employees.Add(employees);
-            await _nwContext.SaveChangesAsync();
-
-            return CreatedAtAction("GetEmployees", new { id = employees.EmployeeId }, employees);*/
-            throw new NotImplementedException();
-
-        }
-
-        // DELETE: api/Employees/5
-        //[Authorize(Roles=UserRoles.Admin)]
+        [Authorize(Roles=UserRoles.Admin)]
         [HttpDelete("{id}")]
-        public async Task<ActionResult<Employees>> DeleteEmployees(int id)
+        public async Task<ActionResult<Employees>> DeleteEmployee(int id)
         {
             Employees employees = await _accountService.DeleteEmployees(id);
             if (employees == null)
@@ -279,6 +263,85 @@ namespace APIServer.Controllers
                 NotFound();
             }
             return employees;
+        }
+
+        [Authorize]
+        [HttpPut("{id}")]
+        public async Task<IActionResult> PutEmployees(int id, ClientUser employee)
+         {
+            int employeeId = int.Parse(employee.EmployeeId);
+            var claim = ((ClaimsIdentity)User.Identity).Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name);
+            AppUser appUser = await _accountService.FindByNameAsync(claim.Value);
+            CustomUser customUser = await _accountService.FindUserById(id);
+            if (customUser == null)
+            {
+                return NotFound();
+            }
+            List<Claim> claims = ((ClaimsIdentity)User.Identity).Claims.Where(c => c.Type == ClaimTypes.Role).ToList();
+            bool admin = false;
+            foreach (Claim c in claims)
+            {
+                if (c.Value == "Admin")
+                {
+                    admin = true;
+                }
+            }
+            if (appUser.EmployeeId == id || admin == true)
+            {
+                Employees employees = await _accountService.FindEmployeeByEmployeeId(id);
+                AppUser userToUpdate = await _accountService.FindByNameAsync(employee.UserName);
+                var result = await _accountService.UpdateAppUser(userToUpdate);
+                return Ok(new
+                {
+                    Status = "Success",
+                    Message = "User updated successfully!",
+                    target = employee.UserName,
+                    by = appUser.UserName
+                });
+            }
+            return Unauthorized();
+         }
+
+        //Loads in three Employees from NW
+        [HttpPost("sync")]
+        public async Task<IActionResult> SyncEmployees()
+        {
+            List<Employees> employees = await _accountService.SyncEmployees();
+            List<RegisterModel> usersToRegister = new List<RegisterModel>();
+            foreach(Employees e in employees)
+            {
+                RegisterModel user = new RegisterModel();
+                user.UserName = e.FirstName + e.LastName;
+                user.FirstName = e.FirstName;
+                user.LastName = e.LastName;
+                user.Password = "Secret1337?";
+                user.Country = e.Country;
+                user.EmployeeID = e.EmployeeId;
+                usersToRegister.Add(user);
+            }
+            foreach(RegisterModel u in usersToRegister)
+            {
+                var userExists = await _accountService.FindByNameAsync(u.UserName);
+                if (userExists != null)
+                {
+                    return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User already exists!" });
+                }
+                AppUser user = _accountService.AddIdeUser(u);
+
+                var result = await _accountService.CreateAsync(user, u.Password);
+                if (!result.Succeeded)
+                {
+                    return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User creation failed! Please check user details and try again." });
+                }
+
+                await _accountService.AddUserToRoleEmployee(user);
+            }
+            return Ok(new
+            {
+                employees= usersToRegister,
+                Status = "Success",
+                Message = "User were synced successfully!",
+            });
         }
     }
 }

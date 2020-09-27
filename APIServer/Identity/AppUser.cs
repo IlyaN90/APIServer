@@ -14,5 +14,6 @@ namespace APIServer.Identity
         public int EmployeeId { get; set; }
         public JwtTokens JToken { get; set; }
         public RefreshTokens RefreshToken { get; set; }
+        public string Country { get; set; }
     }
 }
