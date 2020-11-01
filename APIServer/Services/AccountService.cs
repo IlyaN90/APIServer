@@ -19,6 +19,10 @@ namespace APIServer.Services
 {
     public interface IAccountService
     {
+        //kollar om användaren har giltig JWT
+        public Task<bool> CheckForValidJWT(AppUser User, string jwtToken);
+
+
         #region Create new accounts
         public void AddNewNWEmployee(RegisterModel model);
         public AppUser AddIdeUser(RegisterModel model);
@@ -31,6 +35,7 @@ namespace APIServer.Services
         public Task<Employees> FindEmployeeId(string firstName, string lastName); 
         public Task<Employees> FindEmployeeByEmployeeId(int id);
         public AppUser FindUserFromToken(string token);
+        public Task<AppUser> FindUserByJWT(string jwtToken);
         #endregion
 
         #region Update accounts
@@ -39,20 +44,17 @@ namespace APIServer.Services
         #endregion
 
         #region AppUser to role
-        public Task<IdentityResult> AddUserToRoleEmployee(AppUser user);
-        public Task<IdentityResult> AddUserToRoleVD(AppUser user);
-        public Task<IdentityResult> AddUserToRoleCountryManager(AppUser user);
-        public Task<IdentityResult> AddUserToRoleAdmin(AppUser user);
+        public Task<IdentityResult> AddUserToRole(AppUser user, string role);
         #endregion
 
         #region Tokens
         public Task<IdentityResult> UpdateUserTokens(AppUser user);
         public Task<SecurityToken> CreateJWTToken(AppUser user);
-        public RefreshTokens CreateRefToken(AppUser user);
+        public RefreshTokens CreateRefToken();
         public string GenerateRefreshTokenNum();
         public Task<JwtTokens> GetJWTToken(AppUser user);
         public Task<RefreshTokens> GetRefreshToken(AppUser user);
-        public Task<AuthenticateResponse> RefreshToken(RefreshTokenRequest refTokenString);
+        public Task<AuthenticateResponse> RefreshToken(RefreshTokenRequest refTokenString, AppUser user);
         #endregion
 
         public Task<bool> CheckPasswordAsync(AppUser user, string password);
@@ -110,7 +112,15 @@ namespace APIServer.Services
             return result;
         }
         #endregion
-
+        public async Task<bool> CheckForValidJWT(AppUser user, string jwtToken)
+        {
+            JwtTokens jwt = await _userManager.Users.Select(u => u.JToken).Where(t => t.appUser.Id == user.Id).FirstAsync();
+            if (jwt != null && user.JToken.Token.Contains(jwtToken))
+            {
+                return true;
+            }
+            return false;
+        }
         #region Find accounts
         public async Task<AppUser> FindByNameAsync(string userName)
         {
@@ -142,6 +152,11 @@ namespace APIServer.Services
 
             return customUser;
         }
+        public async Task<AppUser> FindUserByJWT(string jwtToken)
+        {
+            AppUser user = await _userManager.Users.Where(t => t.JToken.Token.Contains(jwtToken)).FirstAsync();
+            return user;
+        }
         public AppUser FindUserFromToken(string token)
         {
             var account = _userManager.Users.Where(u => u.RefreshToken.Token.Equals(token)).FirstOrDefault();
@@ -165,50 +180,39 @@ namespace APIServer.Services
         #endregion
 
         #region AppUser to role
-        public async Task<IdentityResult> AddUserToRoleCountryManager(AppUser user)
+        public async Task<IdentityResult> AddUserToRole(AppUser user, string role)
         {
             List<string> rolesList = new List<string>();
-            rolesList.Add(UserRoles.CountryManager);
-            rolesList.Add(UserRoles.Employee);
-            return await _userManager.AddToRolesAsync(user, rolesList);
-        }
-        public async Task<IdentityResult> AddUserToRoleEmployee(AppUser user)
-        {
-            List<string> rolesList = new List<string>();
-            rolesList.Add(UserRoles.CountryManager);
-            rolesList.Add(UserRoles.Employee);
-            return await _userManager.AddToRoleAsync(user, UserRoles.Employee);
-        }
-        public async Task<IdentityResult> AddUserToRoleVD(AppUser user)
-        {
-            List<string> rolesList = new List<string>();
-            rolesList.Add(UserRoles.VD);
-            rolesList.Add(UserRoles.Employee);
-
-            return await _userManager.AddToRolesAsync(user, rolesList);
-        }
-        public async Task<IdentityResult> AddUserToRoleAdmin(AppUser user)
-        {
-            List<string> rolesList = new List<string>();
-            rolesList.Add(UserRoles.Admin);
-            rolesList.Add(UserRoles.Employee);
-
-            bool admin = await _roleManager.RoleExistsAsync(UserRoles.Admin);
-            bool VD = await _roleManager.RoleExistsAsync(UserRoles.VD);
-            bool employee = await _roleManager.RoleExistsAsync(UserRoles.Employee);
-            bool countryManager= await _roleManager.RoleExistsAsync(UserRoles.CountryManager);
-
-            if (!admin||!VD||!employee||!countryManager)
+            if(role == UserRoles.CountryManager)
             {
-                if (!await _roleManager.RoleExistsAsync(UserRoles.Admin))
-                    await _roleManager.CreateAsync(new IdentityRole(UserRoles.Admin));
-                if (!await _roleManager.RoleExistsAsync(UserRoles.VD))
-                    await _roleManager.CreateAsync(new IdentityRole(UserRoles.VD));
-                if (!await _roleManager.RoleExistsAsync(UserRoles.Employee))
-                    await _roleManager.CreateAsync(new IdentityRole(UserRoles.Employee));
-                if (!await _roleManager.RoleExistsAsync(UserRoles.CountryManager))
-                    await _roleManager.CreateAsync(new IdentityRole(UserRoles.CountryManager));
+                rolesList.Add(UserRoles.CountryManager);
             }
+            if (role == UserRoles.VD)
+            {
+                rolesList.Add(UserRoles.VD);
+            }
+            if (role == UserRoles.Admin)
+            {
+                rolesList.Add(UserRoles.Admin);
+                bool admin = await _roleManager.RoleExistsAsync(UserRoles.Admin);
+                bool VD = await _roleManager.RoleExistsAsync(UserRoles.VD);
+                bool employee = await _roleManager.RoleExistsAsync(UserRoles.Employee);
+                bool countryManager = await _roleManager.RoleExistsAsync(UserRoles.CountryManager);
+
+                if (!admin || !VD || !employee || !countryManager)
+                {
+                    if (!await _roleManager.RoleExistsAsync(UserRoles.Admin))
+                        await _roleManager.CreateAsync(new IdentityRole(UserRoles.Admin));
+                    if (!await _roleManager.RoleExistsAsync(UserRoles.VD))
+                        await _roleManager.CreateAsync(new IdentityRole(UserRoles.VD));
+                    if (!await _roleManager.RoleExistsAsync(UserRoles.Employee))
+                        await _roleManager.CreateAsync(new IdentityRole(UserRoles.Employee));
+                    if (!await _roleManager.RoleExistsAsync(UserRoles.CountryManager))
+                        await _roleManager.CreateAsync(new IdentityRole(UserRoles.CountryManager));
+                }
+                //return await _userManager.AddToRolesAsync(user, rolesList);
+            }
+            rolesList.Add(UserRoles.Employee);
             return await _userManager.AddToRolesAsync(user, rolesList);
         }
         #endregion
@@ -241,7 +245,7 @@ namespace APIServer.Services
                 );
             return token;
         }
-        public RefreshTokens CreateRefToken(AppUser user)
+        public RefreshTokens CreateRefToken()
         {
             RefreshTokens newRefreshToken = new RefreshTokens();
             newRefreshToken.Expires = DateTime.Now.AddMinutes(15);
@@ -279,33 +283,39 @@ namespace APIServer.Services
         {
             return await _userManager.UpdateAsync(user);
         }
-        public async Task<AuthenticateResponse> RefreshToken(RefreshTokenRequest refTokenString)
+        public async Task<AuthenticateResponse> RefreshToken(RefreshTokenRequest refTokenString, AppUser newUser)
         {
-            var user = FindUserFromToken(refTokenString.RefreshToken);
-
-            RefreshTokens refreshToken = new RefreshTokens();
-            refreshToken = CreateRefToken(user);
-            RefreshTokens usersRefToken = await GetRefreshToken(user);
-            user.RefreshToken = new RefreshTokens();
-            user.RefreshToken.Token = refreshToken.Token;
-            user.RefreshToken.Expires = refreshToken.Expires;
-
-            SecurityToken token = await CreateJWTToken(user);
-            JwtTokens newToken = new JwtTokens();
-            JwtTokens usersJwt = await GetJWTToken(user);
-
-            //RefreshTokens usersRefresh = await GetRefreshToken(user);
-            user.JToken = new JwtTokens();
-            user.JToken.Token = token.ToString();
-            user.JToken.ExpirationDate = token.ValidTo;
-
-            var res = await UpdateUserTokens(user);
+            AppUser user;
+            if (refTokenString == null) {
+                user = newUser;
+            }
+            else
+            {
+                user = FindUserFromToken(refTokenString.RefreshToken);
+            }
             AuthenticateResponse response = new AuthenticateResponse();
-            response.RefExpires = DateTime.Now;
-            response.UserName = user.UserName;
-            response.JwtToken = token;
-            response.RefreshToken = refreshToken.Token;
-
+            if (user != null) 
+            { 
+                RefreshTokens refreshToken = new RefreshTokens();
+                refreshToken = CreateRefToken();
+                user.RefreshToken = new RefreshTokens();
+                user.RefreshToken.Token = refreshToken.Token;
+                user.RefreshToken.Expires = refreshToken.Expires;
+                SecurityToken token = await CreateJWTToken(user);
+                
+                JwtTokens usersJwt = await GetJWTToken(user);
+                //RefreshTokens usersRefresh = await GetRefreshToken(user);
+                user.JToken = new JwtTokens();
+                user.JToken.Token = token.ToString();
+                user.JToken.ExpirationDate = token.ValidTo;
+                var res = await UpdateUserTokens(user);
+                response.RefExpires = DateTime.Now;
+                response.UserName = user.UserName;
+                response.JwtToken = token;
+                response.RefreshToken = refreshToken.Token;
+                response.UserName = user.UserName;
+                response.EmployeeId = user.EmployeeId;
+             }
             return response;
         }
         #endregion
@@ -317,17 +327,21 @@ namespace APIServer.Services
 
         public async Task<Employees> DeleteEmployees(int id)
         {
-            AppUser deleteMe = _userManager.Users.Where(u => u.EmployeeId == id).First();
-            await ClearUserTokens(deleteMe);
-            var result = await _userManager.DeleteAsync(deleteMe);
-            var employees = await _nwContext.Employees.FindAsync(id);
-            if (employees == null)
+            AppUser deleteMe = _userManager.Users.Where(u => u.EmployeeId == id).FirstOrDefault();
+            if (deleteMe != null)
             {
-                return null;
+                await ClearUserTokens(deleteMe);
+                var result = await _userManager.DeleteAsync(deleteMe);
+                var employees = await _nwContext.Employees.FindAsync(id);
+                if (employees == null)
+                {
+                    return null;
+                }
+                _nwContext.Employees.Remove(employees);
+                await _nwContext.SaveChangesAsync();
+                return employees;
             }
-            _nwContext.Employees.Remove(employees);
-            await _nwContext.SaveChangesAsync();
-            return employees;
+            return null;
         }
 
         public async Task<bool> ClearUserTokens(AppUser user)
@@ -356,7 +370,7 @@ namespace APIServer.Services
         public async Task<List<Employees>> SyncEmployees()
         {
             List<Employees> employees = new List<Employees>();
-            Employees one=await _nwContext.Employees.FindAsync(4);
+            Employees one = await _nwContext.Employees.FindAsync(4);
             Employees two = await _nwContext.Employees.FindAsync(5);
             Employees three = await _nwContext.Employees.FindAsync(6);
             employees.Add(one);

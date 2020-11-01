@@ -11,6 +11,7 @@ using Microsoft.IdentityModel.Tokens;
 using APIServer.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using APIServer.Services;
+using System;
 
 namespace APIServer.Controllers
 {
@@ -48,7 +49,7 @@ namespace APIServer.Controllers
                 return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User creation failed! Please check user details and try again." });
             }
 
-            await _accountService.AddUserToRoleEmployee(user);
+            await _accountService.AddUserToRole(user, UserRoles.Employee);
 
             return Ok(new
             {
@@ -80,7 +81,7 @@ namespace APIServer.Controllers
                 return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User creation failed! Please check user details and try again." });
             }
 
-            await _accountService.AddUserToRoleCountryManager(user);
+            await _accountService.AddUserToRole(user, UserRoles.CountryManager);
 
             return Ok(new
             {
@@ -111,7 +112,7 @@ namespace APIServer.Controllers
             if (!result.Succeeded)
                 return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User creation failed! Please check user details and try again." });
 
-            var res=await _accountService.AddUserToRoleAdmin(user);
+            var res=await _accountService.AddUserToRole(user, UserRoles.Admin);
 
             return Ok(new
             {
@@ -143,7 +144,7 @@ namespace APIServer.Controllers
                 return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User creation failed! Please check user details and try again." });
             }
 
-            await _accountService.AddUserToRoleVD(user);
+            await _accountService.AddUserToRole(user, UserRoles.VD);
 
             return Ok(new
             {
@@ -157,7 +158,7 @@ namespace APIServer.Controllers
         [HttpPost("refresh-token")]
         public async Task<ActionResult<AuthenticateResponse>> RefreshToken (RefreshTokenRequest refreshToken)
         {
-            var response = await _accountService.RefreshToken(refreshToken);
+            var response = await _accountService.RefreshToken(refreshToken, null);
             if (response.UserName == null)
             {
                 return Unauthorized();
@@ -168,8 +169,8 @@ namespace APIServer.Controllers
                 UserName = response.UserName,
                 RefreshToken = response.RefreshToken,
                 JwtExpiresAt = response.JwtToken.ValidTo,
-                RefExpiresAt = response.RefExpires
-            });
+                RefExpiresAt = response.RefExpires,
+             });
         }
         
         [AllowAnonymous]
@@ -178,35 +179,45 @@ namespace APIServer.Controllers
         public async Task<IActionResult> Login(LoginModel model)
         {
             AppUser user = await _accountService.FindByNameAsync(model.UserName);
-
-            if (await _accountService.CheckPasswordAsync(user, model.Password))
+            if (user != null)
             {
-                if (user != null)
+                RefreshTokens refToken = await _accountService.GetRefreshToken(user);
+
+                bool correct = await _accountService.CheckPasswordAsync(user, model.Password);
+                if (correct)
                 {
-                    SecurityToken token = await _accountService.CreateJWTToken(user);
-                    JwtTokens newToken = await _accountService.GetJWTToken(user);
-                    RefreshTokens usersRefresh = await _accountService.GetRefreshToken(user);
-
-                    user.JToken = newToken;
-                    user.JToken.Token = token.ToString();
-                    user.JToken.ExpirationDate = token.ValidTo;
-
-                    RefreshTokens refreshToken = new RefreshTokens();
-                    user.RefreshToken = refreshToken;
-                    refreshToken = _accountService.CreateRefToken(user);
-                    user.RefreshToken.Token = refreshToken.Token;
-                    user.RefreshToken.Expires = refreshToken.Expires;
-                    var res = await _accountService.UpdateUserTokens(user);
-
-                    return Ok(new
+                    if (refToken.Token == null || refToken.Expires > DateTime.Now)
                     {
-                        JwtToken = new JwtSecurityTokenHandler().WriteToken(token),
-                        UserName = user.UserName,
-                        EmployeeId = user.EmployeeId,
-                        RefreshToken = refreshToken.Token,
-                        JwtExpiresAt = token.ValidTo,
-                        RefExpiresAt = refreshToken.Expires
-                    }); 
+                        RefreshTokenRequest refReq = new RefreshTokenRequest();
+                        refReq.RefreshToken = refToken.Token;
+                        //returnerar och uppdaterar JWT och Ref tokens
+                        AuthenticateResponse response=await _accountService.RefreshToken(refReq, user);
+                        return Ok(new
+                        {
+                            JwtToken = new JwtSecurityTokenHandler().WriteToken(response.JwtToken),
+                            UserName = user.UserName,
+                            EmployeeId = user.EmployeeId,
+                            JwtExpiresAt = response.JwtToken.ValidTo,
+                            RefreshToken = response.RefreshToken,
+                            RefExpiresAt = response.RefExpires
+                        }); 
+                    }
+                    else
+                    {
+                        SecurityToken token = await _accountService.CreateJWTToken(user);
+                        JwtTokens newToken = await _accountService.GetJWTToken(user);
+                        user.JToken = newToken;
+                        user.JToken.Token = token.ToString();
+                        user.JToken.ExpirationDate = token.ValidTo;
+                        var res = await _accountService.UpdateUserTokens(user);
+                        return Ok(new
+                        {
+                            JwtToken = new JwtSecurityTokenHandler().WriteToken(token),
+                            UserName = user.UserName,
+                            EmployeeId = user.EmployeeId,
+                            JwtExpiresAt = token.ValidTo
+                        });
+                    }
                 }
             }
             return Unauthorized();
@@ -217,8 +228,14 @@ namespace APIServer.Controllers
         [HttpGet("{id:int}")]
         public async Task<ActionResult<CustomUser>> GetEmployee(int id)
         {
+            var claimJTI = ((ClaimsIdentity)User.Identity).Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Jti);
             var claim = ((ClaimsIdentity)User.Identity).Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name);
             AppUser employee = await _accountService.FindByNameAsync(claim.Value);
+            bool validJWT = await _accountService.CheckForValidJWT(employee, claimJTI.Value);
+            if (!validJWT)
+            {
+                return Unauthorized();
+            }
             int employeeId = employee.EmployeeId;
             CustomUser customUser = await _accountService.FindUserById(id);
             if (customUser == null)
@@ -257,10 +274,11 @@ namespace APIServer.Controllers
         [HttpDelete("{id}")]
         public async Task<ActionResult<Employees>> DeleteEmployee(int id)
         {
+
             Employees employees = await _accountService.DeleteEmployees(id);
             if (employees == null)
             {
-                NotFound();
+                return NotFound();
             }
             return employees;
         }
@@ -314,7 +332,7 @@ namespace APIServer.Controllers
                 user.UserName = e.FirstName + e.LastName;
                 user.FirstName = e.FirstName;
                 user.LastName = e.LastName;
-                user.Password = "Secret1337?";
+                user.Password = "Secret1337?!";
                 user.Country = e.Country;
                 user.EmployeeID = e.EmployeeId;
                 usersToRegister.Add(user);
@@ -334,7 +352,7 @@ namespace APIServer.Controllers
                     return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User creation failed! Please check user details and try again." });
                 }
 
-                await _accountService.AddUserToRoleEmployee(user);
+                await _accountService.AddUserToRole(user, "Employee");
             }
             return Ok(new
             {
