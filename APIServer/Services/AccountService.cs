@@ -301,7 +301,6 @@ namespace APIServer.Services
                 user.JToken = new JwtTokens();
                 user.JToken.Token = token.ToString();
                 user.JToken.ExpirationDate = token.ValidTo;
-                //var res = await UpdateUserTokens(user);
                 response.RefExpiresAt = DateTime.Now;
                 response.UserName = user.UserName;
                 response.JwtToken = token;
