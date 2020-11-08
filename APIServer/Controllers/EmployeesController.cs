@@ -259,7 +259,6 @@ namespace APIServer.Controllers
             return Unauthorized();
         }
 
-        //Loads in three Employees from NW
         [HttpPost("sync")]
         public async Task<IActionResult> SyncEmployees()
         {
