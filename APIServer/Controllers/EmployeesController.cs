@@ -84,21 +84,30 @@ namespace APIServer.Controllers
         public async Task<ActionResult<AuthenticateResponse>> RefreshToken(RefreshTokenRequest refreshToken)
         {
             string refTokenString = refreshToken.RefreshToken;
-            var response = await _accountService.RefreshTokens(refTokenString, null);
-            if (response == null)
+            if (refreshToken != null)
             {
-                return Unauthorized();
+                AppUser user = _accountService.FindUserFromToken(refreshToken.RefreshToken);
+                if (user != null)
+                {
+                    var response = await _accountService.RefreshTokens(user);
+                    if (response == null)
+                    {
+                        return Unauthorized();
+                    }
+                    var res = await _accountService.UpdateUserTokens(user);
+                    return Ok(new
+                    {
+                        UserName = response.UserName,
+                        JwtToken = new JwtSecurityTokenHandler().WriteToken(response.JwtToken),
+                        JwtExpiresAt = response.JwtToken.ValidTo,
+                        RefreshToken = response.RefreshToken,
+                        RefExpiresAt = response.RefExpiresAt,
+                        Country = "",
+                        EmployeeId = ""
+                    });
+                }
             }
-            return Ok(new
-            {
-                UserName = response.UserName,
-                JwtToken = new JwtSecurityTokenHandler().WriteToken(response.JwtToken),
-                JwtExpiresAt = response.JwtToken.ValidTo,
-                RefreshToken = response.RefreshToken,
-                RefExpiresAt = response.RefExpiresAt,
-                Country = "",
-                EmployeeId= ""
-            }) ;
+            return StatusCode(StatusCodes.Status401Unauthorized, new Response { Status = "Error", Message = "Ogiltig token" }); 
         }
         
         [AllowAnonymous]
@@ -107,59 +116,29 @@ namespace APIServer.Controllers
         public async Task<IActionResult> Login(LoginModel model)
         {
             AppUser user = await _accountService.FindByNameAsync(model.UserName);
-
             if (await _accountService.CheckPasswordAsync(user, model.Password))
             {
-                RefreshTokens refToken = await _accountService.GetRefreshToken(user);
-                //check if valid
-                if (refToken.Token == null || refToken.Expires < DateTime.Now)
+                SecurityToken token = await _accountService.CreateJWTToken(user);
+                JwtTokens newToken = await _accountService.GetJWTToken(user);
+                user.JToken = newToken;
+                user.JToken.Token = token.ToString();
+                user.JToken.ExpirationDate = token.ValidTo;
+                RefreshTokens dbRefToken = await _accountService.GetRefreshToken(user);
+                user.RefreshToken = _accountService.CreateRefToken();
+                var res = await _accountService.UpdateUserTokens(user);
+                return Ok(new
                 {
-                    string tokenstring = refToken.Token;
-                    //returnerar och uppdaterar JWT och Ref tokens
-                    AuthenticateResponse response=await _accountService.RefreshTokens(tokenstring, user);
-                    if (response != null) 
-                    {
-                        var res = await _accountService.UpdateUserTokens(user);
-                        return Ok(new
-                        {
-                            Status = "!RefTokenExists",
-                            JwtToken = new JwtSecurityTokenHandler().WriteToken(response.JwtToken),
-                            UserName = user.UserName,
-                            EmployeeId = user.EmployeeId,
-                            JwtExpiresAt = response.JwtToken.ValidTo,
-                            RefreshToken = response.RefreshToken,
-                            RefExpiresAt = response.RefExpiresAt
-                        });
-                    }
-                    else
-                    {
-                        return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "user = FindUserFromToken(refTokenString.RefreshToken) got null" });
-                    }
-                }
-                else
-                {
-                    SecurityToken token = await _accountService.CreateJWTToken(user);
-                    JwtTokens newToken = await _accountService.GetJWTToken(user);
-                    user.JToken = newToken;
-                    user.JToken.Token = token.ToString();
-                    user.JToken.ExpirationDate = token.ValidTo;
-                    var res = await _accountService.UpdateUserTokens(user);
-                    RefreshTokens dbRefToken = await _accountService.GetRefreshToken(user);
-                    return Ok(new
-                    {
-                        Status = "RefTokenExists",
-                        JwtToken = new JwtSecurityTokenHandler().WriteToken(token),
-                        UserName = user.UserName,
-                        EmployeeId = user.EmployeeId,
-                        JwtExpiresAt = token.ValidTo,
-                        RefreshToken = dbRefToken.Token,
-                        RefExpiresAt = dbRefToken.Expires
-                    });
-                }
+                    Status = "New tokens provided",
+                    JwtToken = new JwtSecurityTokenHandler().WriteToken(token),
+                    UserName = user.UserName,
+                    EmployeeId = user.EmployeeId,
+                    JwtExpiresAt = token.ValidTo,
+                    RefreshToken = user.RefreshToken.Token,
+                    RefExpiresAt = user.RefreshToken.Expires
+                });
             }
             return Unauthorized();
         }
-
 
         [Authorize]
         [HttpGet("{id:int}")]

@@ -21,14 +21,11 @@ namespace APIServer.Services
     {
         //kollar om användaren har giltig JWT
         public Task<bool> CheckForValidJWT(AppUser User, string jwtToken);
-
-
         #region Create new accounts
         public void AddNewNWEmployee(RegisterModel model);
         public AppUser AddIdeUser(RegisterModel model);
         public Task<IdentityResult> CreateAsync(AppUser user, string password);
         #endregion
-
         #region Find accounts
         public Task<AppUser> FindByNameAsync(string userName);
         public Task<CustomUser> FindUserById(int id);
@@ -37,16 +34,13 @@ namespace APIServer.Services
         public AppUser FindUserFromToken(string token);
         public Task<AppUser> FindUserByJWT(string jwtToken);
         #endregion
-
         #region Update accounts
         public Task<Employees> UpdateNVUser(Employees employee);
         public Task<IdentityResult> UpdateAppUser(AppUser appUser);
         #endregion
-
         #region AppUser to role
         public Task<IdentityResult> AddUserToRole(AppUser user, string role);
         #endregion
-
         #region Tokens
         public Task<IdentityResult> UpdateUserTokens(AppUser user);
         public Task<SecurityToken> CreateJWTToken(AppUser user);
@@ -54,15 +48,12 @@ namespace APIServer.Services
         public string GenerateRefreshTokenNum();
         public Task<JwtTokens> GetJWTToken(AppUser user);
         public Task<RefreshTokens> GetRefreshToken(AppUser user);
-        public Task<AuthenticateResponse> RefreshTokens(string refTokenString, AppUser user);
+        public Task<AuthenticateResponse> RefreshTokens(AppUser user);
         #endregion
-
         public Task<bool> CheckPasswordAsync(AppUser user, string password);
         public Task<Employees> DeleteEmployees(int id);
         public Task<bool> ClearUserTokens(AppUser user);
-
         public Task<ActionResult<IEnumerable<AppUser>>> GetEmployees();
-
         public Task<List<Employees>> SyncEmployees();
     }
 
@@ -114,6 +105,10 @@ namespace APIServer.Services
         #endregion
         public async Task<bool> CheckForValidJWT(AppUser user, string jwtToken)
         {
+            if (user == null || jwtToken==null)
+            {
+                return false;
+            }
             JwtTokens jwt = await _userManager.Users.Select(u => u.JToken).Where(t => t.appUser.Id == user.Id).FirstAsync();
             if (jwt != null && user.JToken.Token.Contains(jwtToken))
             {
@@ -154,7 +149,13 @@ namespace APIServer.Services
         }
         public async Task<AppUser> FindUserByJWT(string jwtToken)
         {
-            AppUser user = await _userManager.Users.Where(t => t.JToken.Token.Contains(jwtToken)).FirstAsync();
+            AppUser user = new AppUser();
+            user = null;
+            if (jwtToken != null)
+            {
+                user = await _userManager.Users.Where(t => t.JToken.Token.Contains(jwtToken)).FirstOrDefaultAsync();
+                return user;
+            }
             return user;
         }
         public AppUser FindUserFromToken(string token)
@@ -163,7 +164,6 @@ namespace APIServer.Services
             return account;
         }
         #endregion
-
         #region update accounts
         public async Task<Employees> UpdateNVUser(Employees employee)
         {
@@ -284,41 +284,36 @@ namespace APIServer.Services
             var res = await _userManager.UpdateAsync(user);
             return res;
         }
-        public async Task<AuthenticateResponse> RefreshTokens(string refTokenString, AppUser newUser)
+        public async Task<AuthenticateResponse> RefreshTokens(AppUser user)
         {
-            AppUser user;
-            if (refTokenString == null) {
-                user = newUser;
-            }
-            else
-            {
-                RefreshTokenRequest refToken = new RefreshTokenRequest();
-                refToken.RefreshToken = refTokenString;
-                user = FindUserFromToken(refToken.RefreshToken);
-            }
             AuthenticateResponse response = new AuthenticateResponse();
-
-            //unspeakable horrors await om man inte hämtar usersJwt och usersRefresh
             JwtTokens usersJwt = await GetJWTToken(user);
             RefreshTokens refreshToken = new RefreshTokens();
             RefreshTokens usersRefresh = await GetRefreshToken(user);
-            refreshToken = CreateRefToken();
-            user.RefreshToken = new RefreshTokens();
-            user.RefreshToken.Token = refreshToken.Token;
-            user.RefreshToken.Expires = refreshToken.Expires;
+            if (usersRefresh.Expires >= DateTime.Now)
+            {
+                refreshToken = CreateRefToken();
+                user.RefreshToken = new RefreshTokens();
+                user.RefreshToken.Token = refreshToken.Token;
+                user.RefreshToken.Expires = refreshToken.Expires;
 
-            SecurityToken token = await CreateJWTToken(user);
-            user.JToken = new JwtTokens();
-            user.JToken.Token = token.ToString();
-            user.JToken.ExpirationDate = token.ValidTo;
-            //var res = await UpdateUserTokens(user);
-            response.RefExpiresAt = DateTime.Now;
-            response.UserName = user.UserName;
-            response.JwtToken = token;
-            response.RefreshToken = refreshToken.Token;
-            response.UserName = user.UserName;
-            response.employeeId = user.EmployeeId;
-            return response;
+                SecurityToken token = await CreateJWTToken(user);
+                user.JToken = new JwtTokens();
+                user.JToken.Token = token.ToString();
+                user.JToken.ExpirationDate = token.ValidTo;
+                //var res = await UpdateUserTokens(user);
+                response.RefExpiresAt = DateTime.Now;
+                response.UserName = user.UserName;
+                response.JwtToken = token;
+                response.RefreshToken = refreshToken.Token;
+                response.UserName = user.UserName;
+                response.employeeId = user.EmployeeId;
+                return response;
+            }
+            else
+            {
+                return null;
+            }
         }
         #endregion
 

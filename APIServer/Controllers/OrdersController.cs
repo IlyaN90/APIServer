@@ -32,13 +32,12 @@ namespace APIServer.Controllers
         [HttpGet("{id:int}")]
         public async Task<ActionResult<IEnumerable<Orders>>> GetMyOrders(int id)
         {
-            //IEnumerable<Orders> usersOreders = await _orderService.GetUsersOrders(id);
-            //return usersOreders;
             List<Claim> claims = ((ClaimsIdentity)User.Identity).Claims.Where(c => c.Type == ClaimTypes.Role).ToList();
             var claimJTI = ((ClaimsIdentity)User.Identity).Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Jti);
             AppUser user = await _accountService.FindUserByJWT(claimJTI.Value);
             bool validJWT = await _accountService.CheckForValidJWT(user, claimJTI.Value);
-            if (validJWT) {
+            if (validJWT) 
+            {
                 bool admin = false;
                 bool vd = false;
                 bool self = false;
