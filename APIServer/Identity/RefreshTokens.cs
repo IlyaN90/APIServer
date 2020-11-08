@@ -11,7 +11,6 @@ namespace APIServer.Identity
         public int Id { get; set; }
         public string Token { get; set; }
         public DateTime Expires { get; set; }
-
         public AppUser appUser { get; set; }
     }
 }

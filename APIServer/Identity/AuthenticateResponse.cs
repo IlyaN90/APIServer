@@ -11,7 +11,7 @@ namespace APIServer.Identity
         public string UserName { get; set; }
         public SecurityToken JwtToken { get; set; }
         public string RefreshToken { get; set; }
-        public DateTime RefExpires { get; set; }
-        public int EmployeeId { get; set; }
+        public DateTime RefExpiresAt { get; set; }
+        public int employeeId { get; set; }
     }
 }

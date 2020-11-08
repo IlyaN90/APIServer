@@ -12,6 +12,7 @@ using APIServer.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using APIServer.Services;
 using System;
+using APIServer.Migrations.Northwind;
 
 namespace APIServer.Controllers
 {
@@ -44,133 +45,60 @@ namespace APIServer.Controllers
             AppUser user = _accountService.AddIdeUser(model);
 
             var result = await _accountService.CreateAsync(user, model.Password);
+            string role = model.Role;
             if (!result.Succeeded) 
             { 
                 return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User creation failed! Please check user details and try again." });
             }
-
-            await _accountService.AddUserToRole(user, UserRoles.Employee);
-
+            else if (role == "Admin")
+            {
+                await _accountService.AddUserToRole(user, UserRoles.Admin);
+            }
+            else if (role == "CountryManager")
+            {
+                await _accountService.AddUserToRole(user, UserRoles.CountryManager);
+            }
+            else if (role == "VD")
+            {
+                await _accountService.AddUserToRole(user, UserRoles.VD);
+            }
+            else if (role == "Employee")
+            {
+                await _accountService.AddUserToRole(user, UserRoles.Employee);
+            }
+            else
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "Please provide an accepted role with the user!" });
+            }
             return Ok(new
             {
                 Status = "Success",
                 Message = "User created successfully!",
-                employeeId = user.EmployeeId
+                employeeId = user.EmployeeId,
+                role=model.Role
             }); 
         }
 
-        [AllowAnonymous]
-        [HttpPost]
-        [Route("register-manager")]
-        public async Task<IActionResult> RegisterCountryManager(RegisterModel model)
-        {
-            var userExists = await _accountService.FindByNameAsync(model.UserName);
-            if (userExists != null)
-            {
-                return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User already exists!" });
-            }
-            //create an employee and get its EmployeeID
-            _accountService.AddNewNWEmployee(model);
-            Employees employee= await _accountService.FindEmployeeId(model.FirstName, model.LastName);
-            model.EmployeeID = employee.EmployeeId;
-            AppUser user = _accountService.AddIdeUser(model);
-
-            var result = await _accountService.CreateAsync(user, model.Password);
-            if (!result.Succeeded)
-            {
-                return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User creation failed! Please check user details and try again." });
-            }
-
-            await _accountService.AddUserToRole(user, UserRoles.CountryManager);
-
-            return Ok(new
-            {
-                Status = "Success",
-                Message = "User created successfully!",
-                employeeId = user.EmployeeId
-            });
-        }
-        
-        [HttpPost]
-        [Route("register-admin")]
-        public async Task<IActionResult> RegisterAdmin(RegisterModel model)
-        {
-            var userExists = await _accountService.FindByNameAsync(model.UserName);
-            if (userExists != null)
-            {
-                return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User already exists!" });
-            }
-            _accountService.AddNewNWEmployee(model);
-            Employees employee = await _accountService.FindEmployeeId(model.FirstName, model.LastName);
-            int id = employee.EmployeeId;
-            model.EmployeeID = id;
-
-            //create an employee and get its EmployeeID
-            AppUser user = _accountService.AddIdeUser(model);
-
-            var result = await _accountService.CreateAsync(user, model.Password);
-            if (!result.Succeeded)
-                return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User creation failed! Please check user details and try again." });
-
-            var res=await _accountService.AddUserToRole(user, UserRoles.Admin);
-
-            return Ok(new
-            {
-                Status = "Success",
-                Message = "User created successfully!",
-                employeeId = user.EmployeeId
-            });
-        }
-
-        [HttpPost]
-        [Route("register-vd")]
-        public async Task<IActionResult> RegisterVD(RegisterModel model)
-        {
-            var userExists = await _accountService.FindByNameAsync(model.UserName);
-            if (userExists != null)
-                return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User already exists!" });
-
-            //create an employee and get its EmployeeID
-            _accountService.AddNewNWEmployee(model);
-            Employees employee = await _accountService.FindEmployeeId(model.FirstName, model.LastName);
-            int id = employee.EmployeeId;
-            model.EmployeeID = id;
-
-            AppUser user = _accountService.AddIdeUser(model);
-
-            var result = await _accountService.CreateAsync(user, model.Password);
-            if (!result.Succeeded)
-            {
-                return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "User creation failed! Please check user details and try again." });
-            }
-
-            await _accountService.AddUserToRole(user, UserRoles.VD);
-
-            return Ok(new
-            {
-                Status = "Success",
-                Message = "User created successfully!",
-                employeeId = user.EmployeeId
-            });
-        }
         #endregion
-        
         [HttpPost("refresh-token")]
-        public async Task<ActionResult<AuthenticateResponse>> RefreshToken (RefreshTokenRequest refreshToken)
+        public async Task<ActionResult<AuthenticateResponse>> RefreshToken(RefreshTokenRequest refreshToken)
         {
-            var response = await _accountService.RefreshToken(refreshToken, null);
-            if (response.UserName == null)
+            string refTokenString = refreshToken.RefreshToken;
+            var response = await _accountService.RefreshTokens(refTokenString, null);
+            if (response == null)
             {
                 return Unauthorized();
             }
             return Ok(new
             {
-                JwtToken = new JwtSecurityTokenHandler().WriteToken(response.JwtToken),
                 UserName = response.UserName,
-                RefreshToken = response.RefreshToken,
+                JwtToken = new JwtSecurityTokenHandler().WriteToken(response.JwtToken),
                 JwtExpiresAt = response.JwtToken.ValidTo,
-                RefExpiresAt = response.RefExpires,
-             });
+                RefreshToken = response.RefreshToken,
+                RefExpiresAt = response.RefExpiresAt,
+                Country = "",
+                EmployeeId= ""
+            }) ;
         }
         
         [AllowAnonymous]
@@ -179,45 +107,54 @@ namespace APIServer.Controllers
         public async Task<IActionResult> Login(LoginModel model)
         {
             AppUser user = await _accountService.FindByNameAsync(model.UserName);
-            if (user != null)
+
+            if (await _accountService.CheckPasswordAsync(user, model.Password))
             {
                 RefreshTokens refToken = await _accountService.GetRefreshToken(user);
-
-                bool correct = await _accountService.CheckPasswordAsync(user, model.Password);
-                if (correct)
+                //check if valid
+                if (refToken.Token == null || refToken.Expires < DateTime.Now)
                 {
-                    if (refToken.Token == null || refToken.Expires > DateTime.Now)
+                    string tokenstring = refToken.Token;
+                    //returnerar och uppdaterar JWT och Ref tokens
+                    AuthenticateResponse response=await _accountService.RefreshTokens(tokenstring, user);
+                    if (response != null) 
                     {
-                        RefreshTokenRequest refReq = new RefreshTokenRequest();
-                        refReq.RefreshToken = refToken.Token;
-                        //returnerar och uppdaterar JWT och Ref tokens
-                        AuthenticateResponse response=await _accountService.RefreshToken(refReq, user);
+                        var res = await _accountService.UpdateUserTokens(user);
                         return Ok(new
                         {
+                            Status = "!RefTokenExists",
                             JwtToken = new JwtSecurityTokenHandler().WriteToken(response.JwtToken),
                             UserName = user.UserName,
                             EmployeeId = user.EmployeeId,
                             JwtExpiresAt = response.JwtToken.ValidTo,
                             RefreshToken = response.RefreshToken,
-                            RefExpiresAt = response.RefExpires
-                        }); 
+                            RefExpiresAt = response.RefExpiresAt
+                        });
                     }
                     else
                     {
-                        SecurityToken token = await _accountService.CreateJWTToken(user);
-                        JwtTokens newToken = await _accountService.GetJWTToken(user);
-                        user.JToken = newToken;
-                        user.JToken.Token = token.ToString();
-                        user.JToken.ExpirationDate = token.ValidTo;
-                        var res = await _accountService.UpdateUserTokens(user);
-                        return Ok(new
-                        {
-                            JwtToken = new JwtSecurityTokenHandler().WriteToken(token),
-                            UserName = user.UserName,
-                            EmployeeId = user.EmployeeId,
-                            JwtExpiresAt = token.ValidTo
-                        });
+                        return StatusCode(StatusCodes.Status500InternalServerError, new Response { Status = "Error", Message = "user = FindUserFromToken(refTokenString.RefreshToken) got null" });
                     }
+                }
+                else
+                {
+                    SecurityToken token = await _accountService.CreateJWTToken(user);
+                    JwtTokens newToken = await _accountService.GetJWTToken(user);
+                    user.JToken = newToken;
+                    user.JToken.Token = token.ToString();
+                    user.JToken.ExpirationDate = token.ValidTo;
+                    var res = await _accountService.UpdateUserTokens(user);
+                    RefreshTokens dbRefToken = await _accountService.GetRefreshToken(user);
+                    return Ok(new
+                    {
+                        Status = "RefTokenExists",
+                        JwtToken = new JwtSecurityTokenHandler().WriteToken(token),
+                        UserName = user.UserName,
+                        EmployeeId = user.EmployeeId,
+                        JwtExpiresAt = token.ValidTo,
+                        RefreshToken = dbRefToken.Token,
+                        RefExpiresAt = dbRefToken.Expires
+                    });
                 }
             }
             return Unauthorized();
@@ -234,7 +171,7 @@ namespace APIServer.Controllers
             bool validJWT = await _accountService.CheckForValidJWT(employee, claimJTI.Value);
             if (!validJWT)
             {
-                return Unauthorized();
+                return StatusCode(StatusCodes.Status401Unauthorized, new Response { Status = "Error", Message = "invalid JWT for !" + employee.UserName });
             }
             int employeeId = employee.EmployeeId;
             CustomUser customUser = await _accountService.FindUserById(id);
@@ -267,58 +204,81 @@ namespace APIServer.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<AppUser>>> GetEmployees()
         {
-            return await _accountService.GetEmployees();
+            var claimJTI = ((ClaimsIdentity)User.Identity).Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Jti);
+            var claim = ((ClaimsIdentity)User.Identity).Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name);
+            AppUser employee = await _accountService.FindByNameAsync(claim.Value);
+            bool validJWT = await _accountService.CheckForValidJWT(employee, claimJTI.Value);
+            if (validJWT)
+            {
+                return await _accountService.GetEmployees();
+            }
+            return Unauthorized();
         }
 
         [Authorize(Roles=UserRoles.Admin)]
         [HttpDelete("{id}")]
         public async Task<ActionResult<Employees>> DeleteEmployee(int id)
         {
-
-            Employees employees = await _accountService.DeleteEmployees(id);
-            if (employees == null)
+            var claimJTI = ((ClaimsIdentity)User.Identity).Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Jti);
+            var claim = ((ClaimsIdentity)User.Identity).Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name);
+            AppUser employee = await _accountService.FindByNameAsync(claim.Value);
+            bool validJWT = await _accountService.CheckForValidJWT(employee, claimJTI.Value);
+            if (validJWT)
             {
-                return NotFound();
+                Employees employees = await _accountService.DeleteEmployees(id);
+                if (employees == null)
+                {
+                    return NotFound();
+                }
+                return employees;
             }
-            return employees;
+            return Unauthorized();
         }
 
         [Authorize]
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutEmployees(int id, ClientUser employee)
+        public async Task<IActionResult> PutEmployees(int id, ClientUser cliEmployee)
          {
-            int employeeId = int.Parse(employee.EmployeeId);
+            int employeeId = int.Parse(cliEmployee.EmployeeId);
+
+            var claimJTI = ((ClaimsIdentity)User.Identity).Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Jti);
             var claim = ((ClaimsIdentity)User.Identity).Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name);
-            AppUser appUser = await _accountService.FindByNameAsync(claim.Value);
-            CustomUser customUser = await _accountService.FindUserById(id);
-            if (customUser == null)
-            {
-                return NotFound();
-            }
-            List<Claim> claims = ((ClaimsIdentity)User.Identity).Claims.Where(c => c.Type == ClaimTypes.Role).ToList();
-            bool admin = false;
-            foreach (Claim c in claims)
-            {
-                if (c.Value == "Admin")
+            AppUser employee = await _accountService.FindByNameAsync(claim.Value);
+            bool validJWT = await _accountService.CheckForValidJWT(employee, claimJTI.Value);
+            if (validJWT)
+            { 
+                AppUser appUser = await _accountService.FindByNameAsync(claim.Value);
+                CustomUser customUser = await _accountService.FindUserById(id);
+                if (customUser == null)
                 {
-                    admin = true;
+                    return NotFound();
                 }
-            }
-            if (appUser.EmployeeId == id || admin == true)
-            {
-                Employees employees = await _accountService.FindEmployeeByEmployeeId(id);
-                AppUser userToUpdate = await _accountService.FindByNameAsync(employee.UserName);
-                var result = await _accountService.UpdateAppUser(userToUpdate);
-                return Ok(new
+                List<Claim> claims = ((ClaimsIdentity)User.Identity).Claims.Where(c => c.Type == ClaimTypes.Role).ToList();
+                bool admin = false;
+                foreach (Claim c in claims)
                 {
-                    Status = "Success",
-                    Message = "User updated successfully!",
-                    target = employee.UserName,
-                    by = appUser.UserName
-                });
+                    if (c.Value == "Admin")
+                    {
+                        admin = true;
+                    }
+                }
+                if (appUser.EmployeeId == id || admin == true)
+                {
+                    Employees employees = await _accountService.FindEmployeeByEmployeeId(id);
+                    AppUser userToUpdate = await _accountService.FindByNameAsync(employee.UserName);
+                    var result = await _accountService.UpdateAppUser(userToUpdate);
+                    return Ok(new
+                    {
+                        Status = "Success",
+                        Message = "User updated successfully!",
+                        target = cliEmployee.UserName,
+                        by = appUser.UserName
+                    });
+                }
+                return Unauthorized();
             }
             return Unauthorized();
-         }
+        }
 
         //Loads in three Employees from NW
         [HttpPost("sync")]
