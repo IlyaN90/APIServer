@@ -124,18 +124,35 @@ namespace APIServer.Controllers
                 user.JToken.Token = token.ToString();
                 user.JToken.ExpirationDate = token.ValidTo;
                 RefreshTokens dbRefToken = await _accountService.GetRefreshToken(user);
-                user.RefreshToken = _accountService.CreateRefToken();
-                var res = await _accountService.UpdateUserTokens(user);
-                return Ok(new
+                if (dbRefToken == null || dbRefToken.Expires<DateTime.Now)
                 {
-                    Status = "New tokens provided",
-                    JwtToken = new JwtSecurityTokenHandler().WriteToken(token),
-                    UserName = user.UserName,
-                    EmployeeId = user.EmployeeId,
-                    JwtExpiresAt = token.ValidTo,
-                    RefreshToken = user.RefreshToken.Token,
-                    RefExpiresAt = user.RefreshToken.Expires
-                });
+                    user.RefreshToken = _accountService.CreateRefToken();
+                    var res = await _accountService.UpdateUserTokens(user);
+                    return Ok(new
+                    {
+                        Status = "New tokens provided",
+                        JwtToken = new JwtSecurityTokenHandler().WriteToken(token),
+                        UserName = user.UserName,
+                        EmployeeId = user.EmployeeId,
+                        JwtExpiresAt = token.ValidTo,
+                        RefreshToken = user.RefreshToken.Token,
+                        RefExpiresAt = user.RefreshToken.Expires
+                    });
+                }
+                else 
+                {
+                    var res = await _accountService.UpdateUserTokens(user);
+                    return Ok(new
+                    {
+                        Status = "New JWT token provided",
+                        JwtToken = new JwtSecurityTokenHandler().WriteToken(token),
+                        UserName = user.UserName,
+                        EmployeeId = user.EmployeeId,
+                        JwtExpiresAt = token.ValidTo,
+                        RefreshToken = user.RefreshToken.Token,
+                        RefExpiresAt = user.RefreshToken.Expires
+                    });
+                }
             }
             return Unauthorized();
         }
