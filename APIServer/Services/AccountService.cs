@@ -103,14 +103,14 @@ namespace APIServer.Services
             return result;
         }
         #endregion
-        public async Task<bool> CheckForValidJWT(AppUser user, string jwtToken)
+        public async Task<bool> CheckForValidJWT(AppUser user, string jtiValue)
         {
-            if (user == null || jwtToken==null)
+            if (user == null || jtiValue == null)
             {
                 return false;
             }
             JwtTokens jwt = await _userManager.Users.Select(u => u.JToken).Where(t => t.appUser.Id == user.Id).FirstAsync();
-            if (jwt != null && user.JToken.Token.Contains(jwtToken))
+            if (jwt != null && user.JToken.Token.Contains(jtiValue))
             {
                 return true;
             }
